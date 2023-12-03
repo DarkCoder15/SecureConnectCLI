@@ -1,0 +1,27 @@
+# URL of SecureConnect Service
+url: 'https://example.com/SecureConnect/ExampleEndPoint'
+
+# AES Key for proxied traffic encryption
+aesKey: 'ExampleAesKey'
+
+# Credentials
+username: user1
+
+password: somepassword
+
+# Proxy in SOCKS format
+socks:
+  enabled: true
+  port: 1080
+
+# Proxy in HTTP format
+http:
+  enabled: true
+  port: 8080
+
+# TCP proxies
+tcp:
+  - host: 0.0.0.0
+    port: 2222
+    targetHost: 10.0.0.1 # 10.0.0.1 will redirect to SecureConnect Server
+    targetPort: 22
