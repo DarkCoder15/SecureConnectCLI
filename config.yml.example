@@ -25,3 +25,9 @@ tcp:
     port: 2222
     targetHost: 10.0.0.1 # 10.0.0.1 will redirect to SecureConnect Server
     targetPort: 22
+
+# Port forwarding (Accessing local servers through SecureConnect)
+tunnels:
+  80:
+    host: 'localhost'
+    port: 80
