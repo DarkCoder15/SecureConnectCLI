@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const YAML = require('yaml');
 const net = require('net');
-const { generateID } = require('./generators');
+const { generateID, generateGarbage } = require('./generators');
 const { decrypt, encrypt } = require('./encryption');
 const { getArgument } = require('./arguments');
 
@@ -30,7 +30,8 @@ sock.on('open', async () => {
         _: 'Authorization',
         username,
         password,
-        tunnels
+        tunnels,
+        garbage: generateGarbage()
     }));
 });
 
@@ -45,7 +46,8 @@ sock.on('message', async (message, isBinary) => {
                 sock.send(YAML.stringify({
                     _: 'Write',
                     socketId: msg.socketId,
-                    data: encrypt(buffer, aesKey).toString('binary')
+                    data: encrypt(buffer, aesKey).toString('binary'),
+                    garbage: generateGarbage()
                 }));
             });
         } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
@@ -66,7 +68,8 @@ sock.on('message', async (message, isBinary) => {
                         sock.send(YAML.stringify({
                             _: 'Write',
                             socketId: msg.socketId,
-                            data: encrypt(buffer, aesKey).toString('binary')
+                            data: encrypt(buffer, aesKey).toString('binary'),
+                            garbage: generateGarbage()
                         }));
                     });
                 });
@@ -74,7 +77,8 @@ sock.on('message', async (message, isBinary) => {
                 conn.on('close', () => {
                     sock.send(YAML.stringify({
                         _: 'CloseConnection',
-                        socketId: msg.socketId
+                        socketId: msg.socketId,
+                        garbage: generateGarbage()
                     }));
                 });
             } else if (msg.type == 'Data') {
@@ -99,14 +103,16 @@ if (config.socks.enabled) {
         socket.on('close', () => {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
-                socketId: id
+                socketId: id,
+                garbage: generateGarbage()
             }));
         });
         sock.send(YAML.stringify({
             _: 'CreateConnection',
             host: address,
             port,
-            socketId: id
+            socketId: id,
+            garbage: generateGarbage()
         }));
     });
 
@@ -130,14 +136,16 @@ if (config.http.enabled) {
         socket.on('close', () => {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
-                socketId: id
+                socketId: id,
+                garbage: generateGarbage()
             }));
         });
         sock.send(YAML.stringify({
             _: 'CreateConnection',
             host,
             port,
-            socketId: id
+            socketId: id,
+            garbage: generateGarbage()
         }));
     });
 
@@ -158,14 +166,16 @@ for (const gate of config.tcp) {
         socket.on('close', () => {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
-                socketId: id
+                socketId: id,
+                garbage: generateGarbage()
             }));
         });
         sock.send(YAML.stringify({
             _: 'CreateConnection',
             host: gate.targetHost,
             port: gate.targetPort,
-            socketId: id
+            socketId: id,
+            garbage: generateGarbage()
         }));
     }).listen(gate.port, gate.host);
 }
