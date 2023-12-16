@@ -13,6 +13,7 @@ function generateID(length) {
 }
 
 function generateGarbage() {
+    if (!config.garbage) return '';
     return generateID(randomInt(8, 128));
 }
 

@@ -39,9 +39,88 @@ sock.on('open', async () => {
 });
 
 sock.on('close', async () => {
-	console.error('WebSocket closed');
-	process.exit();
+    console.error('WebSocket closed');
+    process.exit();
 });
+
+function relay(url, username, password, socket, address, port) {
+    var sock = new ws.WebSocket(url, {
+        rejectUnauthorized: false
+    });
+    var packets = [];
+    var sockets = {};
+
+    var i = setInterval(() => {
+        packets = packets.sort((a, b) => a.timestamp - b.timestamp);
+        for (const data of packets) {
+            packets.shift();
+            for (const msg of data.data) {
+                // if else if else if else if else if else if else if else if else if else if else
+                if (msg.socketId && !sockets[msg.socketId]) continue;
+                if (msg.handler == 'Connection' && msg.type == 'Open') {
+                    sockets[msg.socketId].ready();
+                    sockets[msg.socketId].on('data', (buffer) => {
+                        sock.send(YAML.stringify({
+                            _: 'Write',
+                            socketId: msg.socketId,
+                            data: encrypt(buffer, aesKey).toString('binary'),
+                            garbage: generateGarbage(),
+                            timestamp: Date.now()
+                        }));
+                    });
+                } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
+                    sockets[msg.socketId].destroy();
+                    clearInterval(i);
+                    sock.close();
+                } else if (msg.handler == 'Connection' && msg.type == 'Data') {
+                    sockets[msg.socketId].write(decrypt(msg.data, aesKey));
+                }
+                if (msg.handler == 'Authorization' && msg.type == 'Success') {
+                    const id = generateID();
+                    socket.on('close', () => {
+                        sock.send(YAML.stringify({
+                            _: 'CloseConnection',
+                            socketId: id,
+                            garbage: generateGarbage(),
+                            timestamp: Date.now()
+                        }));
+                        clearInterval(i);
+                        sock.close();
+                    });
+                    sockets[id] = socket;
+                    sock.send(YAML.stringify({
+                        _: 'CreateConnection',
+                        host: address,
+                        port,
+                        socketId: id,
+                        garbage: generateGarbage(),
+                        timestamp: Date.now()
+                    }));
+                }
+                if (msg.message)
+                    console.log(`[${new Date().toLocaleTimeString()}] [${msg.handler}] ${msg.type}: ${msg.message}`);
+            }
+        }
+    }, 1);
+
+    sock.on('message', async (message, isBinary) => {
+        message = message.toString('utf-8');
+        const data = YAML.parse(message);
+        packets.push(data);
+    });
+
+    sock.on('open', async () => {
+        sock.send(YAML.stringify({
+            _: 'Authorization',
+            username,
+            password,
+            tunnels: {},
+            garbage: generateGarbage(),
+            timestamp: Date.now()
+        }));
+       
+    });
+}
 
 var packets = [];
 
@@ -86,7 +165,7 @@ setInterval(() => {
                             }));
                         });
                     });
-                    conn.ready = () => {};
+                    conn.ready = () => { };
                     conn.on('close', () => {
                         sock.send(YAML.stringify({
                             _: 'CloseConnection',
@@ -115,27 +194,31 @@ sock.on('message', async (message, isBinary) => {
 
 if (config.socks.enabled) {
     const server = socks5.createServer(async (socket, port, address, proxy_ready) => {
-        const id = generateID();
         socket.ready = () => {
             proxy_ready();
         };
-        socket.on('close', () => {
-            sock.send(YAML.stringify({
-                _: 'CloseConnection',
-                socketId: id,
-                garbage: generateGarbage(),
-                timestamp: Date.now()
-            }));
-        });
-        sockets[id] = socket;
-        sock.send(YAML.stringify({
-            _: 'CreateConnection',
-            host: address,
-            port,
-            socketId: id,
-            garbage: generateGarbage(),
-            timestamp: Date.now()
-        }));
+        relay(url, username, password, socket, address, port);
+        // const id = generateID();
+        // socket.ready = () => {
+        //     proxy_ready();
+        // };
+        // socket.on('close', () => {
+        //     sock.send(YAML.stringify({
+        //         _: 'CloseConnection',
+        //         socketId: id,
+        //         garbage: generateGarbage(),
+        //         timestamp: Date.now()
+        //     }));
+        // });
+        // sockets[id] = socket;
+        // sock.send(YAML.stringify({
+        //     _: 'CreateConnection',
+        //     host: address,
+        //     port,
+        //     socketId: id,
+        //     garbage: generateGarbage(),
+        //     timestamp: Date.now()
+        // }));
     });
 
     server.listen(config.socks.port, config.socks.host);
