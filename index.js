@@ -195,7 +195,7 @@ function tunnel(url, username, password, tunnels) {
 }
 
 for (const port in tunnels) {
-    tunnel(url, username, port, {
+    tunnel(url, username, password, port, {
         [port]: tunnels[port]
     });
 }
