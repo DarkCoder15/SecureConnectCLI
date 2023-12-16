@@ -33,7 +33,8 @@ sock.on('open', async () => {
         username,
         password,
         tunnels,
-        garbage: generateGarbage()
+        garbage: generateGarbage(),
+        timestamp: Date.now()
     }));
 });
 
@@ -42,61 +43,74 @@ sock.on('close', async () => {
 	process.exit();
 });
 
+var packets = [];
+
+setInterval(() => {
+    packets = packets.sort((a, b) => a.timestamp - b.timestamp);
+    for (const data of packets) {
+        packets.shift();
+        for (const msg of data.data) {
+            // if else if else if else if else if else if else if else if else if else if else
+            if (msg.socketId && !sockets[msg.socketId] && !incomingSockets[msg.socketId]) continue;
+            if (msg.handler == 'Connection' && msg.type == 'Open') {
+                sockets[msg.socketId].ready();
+                sockets[msg.socketId].on('data', (buffer) => {
+                    sock.send(YAML.stringify({
+                        _: 'Write',
+                        socketId: msg.socketId,
+                        data: encrypt(buffer, aesKey).toString('binary'),
+                        garbage: generateGarbage(),
+                        timestamp: Date.now()
+                    }));
+                });
+            } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
+                sockets[msg.socketId].destroy();
+            } else if (msg.handler == 'Connection' && msg.type == 'Data') {
+                sockets[msg.socketId].write(decrypt(msg.data, aesKey));
+            }
+            if (msg.handler == 'IncomingConnection') {
+                if (msg.type == 'Open') {
+                    const tun = tunnels[msg.port];
+                    const conn = net.createConnection({
+                        host: tun.host,
+                        port: tun.port
+                    }, () => {
+                        incomingSockets[msg.socketId] = conn;
+                        conn.on('data', (buffer) => {
+                            sock.send(YAML.stringify({
+                                _: 'Write',
+                                socketId: msg.socketId,
+                                data: encrypt(buffer, aesKey).toString('binary'),
+                                garbage: generateGarbage(),
+                                timestamp: Date.now()
+                            }));
+                        });
+                    });
+                    conn.ready = () => {};
+                    conn.on('close', () => {
+                        sock.send(YAML.stringify({
+                            _: 'CloseConnection',
+                            socketId: msg.socketId,
+                            garbage: generateGarbage(),
+                            timestamp: Date.now()
+                        }));
+                    });
+                } else if (msg.type == 'Data') {
+                    incomingSockets[msg.socketId].write(decrypt(msg.data, aesKey));
+                } else if (msg.type == 'Closed') {
+                    incomingSockets[msg.socketId].destroy();
+                }
+            }
+            if (msg.message)
+                console.log(`[${new Date().toLocaleTimeString()}] [${msg.handler}] ${msg.type}: ${msg.message}`);
+        }
+    }
+}, 1);
+
 sock.on('message', async (message, isBinary) => {
     message = message.toString('utf-8');
     const data = YAML.parse(message);
-    for (const msg of data.data) {
-        // if else if else if else if else if else if else if else if else if else if else
-        if (msg.socketId && !sockets[msg.socketId] && !incomingSockets[msg.socketId]) continue;
-        if (msg.handler == 'Connection' && msg.type == 'Open') {
-            sockets[msg.socketId].ready();
-            sockets[msg.socketId].on('data', (buffer) => {
-                sock.send(YAML.stringify({
-                    _: 'Write',
-                    socketId: msg.socketId,
-                    data: encrypt(buffer, aesKey).toString('binary'),
-                    garbage: generateGarbage()
-                }));
-            });
-        } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
-            sockets[msg.socketId].destroy();
-        } else if (msg.handler == 'Connection' && msg.type == 'Data') {
-            sockets[msg.socketId].write(decrypt(msg.data, aesKey));
-        }
-        if (msg.handler == 'IncomingConnection') {
-            if (msg.type == 'Open') {
-                const tun = tunnels[msg.port];
-                const conn = net.createConnection({
-                    host: tun.host,
-                    port: tun.port
-                }, () => {
-                    incomingSockets[msg.socketId] = conn;
-                    conn.on('data', (buffer) => {
-                        sock.send(YAML.stringify({
-                            _: 'Write',
-                            socketId: msg.socketId,
-                            data: encrypt(buffer, aesKey).toString('binary'),
-                            garbage: generateGarbage()
-                        }));
-                    });
-                });
-                conn.ready = () => {};
-                conn.on('close', () => {
-                    sock.send(YAML.stringify({
-                        _: 'CloseConnection',
-                        socketId: msg.socketId,
-                        garbage: generateGarbage()
-                    }));
-                });
-            } else if (msg.type == 'Data') {
-                incomingSockets[msg.socketId].write(decrypt(msg.data, aesKey));
-            } else if (msg.type == 'Closed') {
-                incomingSockets[msg.socketId].destroy();
-            }
-        }
-        if (msg.message)
-            console.log(`[${new Date().toLocaleTimeString()}] [${msg.handler}] ${msg.type}: ${msg.message}`);
-    }
+    packets.push(data);
 });
 
 if (config.socks.enabled) {
@@ -109,7 +123,8 @@ if (config.socks.enabled) {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
                 socketId: id,
-                garbage: generateGarbage()
+                garbage: generateGarbage(),
+                timestamp: Date.now()
             }));
         });
         sockets[id] = socket;
@@ -118,7 +133,8 @@ if (config.socks.enabled) {
             host: address,
             port,
             socketId: id,
-            garbage: generateGarbage()
+            garbage: generateGarbage(),
+            timestamp: Date.now()
         }));
     });
 
@@ -143,7 +159,8 @@ if (config.http.enabled) {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
                 socketId: id,
-                garbage: generateGarbage()
+                garbage: generateGarbage(),
+                timestamp: Date.now()
             }));
         });
         sock.send(YAML.stringify({
@@ -151,7 +168,8 @@ if (config.http.enabled) {
             host,
             port,
             socketId: id,
-            garbage: generateGarbage()
+            garbage: generateGarbage(),
+            timestamp: Date.now()
         }));
     });
 
@@ -173,7 +191,8 @@ for (const gate of config.tcp) {
             sock.send(YAML.stringify({
                 _: 'CloseConnection',
                 socketId: id,
-                garbage: generateGarbage()
+                garbage: generateGarbage(),
+                timestamp: Date.now()
             }));
         });
         sock.send(YAML.stringify({
@@ -181,7 +200,8 @@ for (const gate of config.tcp) {
             host: gate.targetHost,
             port: gate.targetPort,
             socketId: id,
-            garbage: generateGarbage()
+            garbage: generateGarbage(),
+            timestamp: Date.now()
         }));
     }).listen(gate.port, gate.host);
 }
