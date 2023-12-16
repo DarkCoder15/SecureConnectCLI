@@ -16,6 +16,8 @@ const aesKey = getArgument('aes-key', config.aesKey);
 const username = getArgument('username', config.username);
 const password = getArgument('password', config.password);
 
+globalThis.config = config;
+
 const tunnels = config.tunnels;
 
 var sock = new ws.WebSocket(url, {
@@ -35,11 +37,17 @@ sock.on('open', async () => {
     }));
 });
 
+sock.on('close', async () => {
+	console.error('WebSocket closed');
+	process.exit();
+});
+
 sock.on('message', async (message, isBinary) => {
     message = message.toString('utf-8');
     const data = YAML.parse(message);
     for (const msg of data.data) {
         // if else if else if else if else if else if else if else if else if else if else
+        if (msg.socketId && !sockets[msg.socketId] && !incomingSockets[msg.socketId]) continue;
         if (msg.handler == 'Connection' && msg.type == 'Open') {
             sockets[msg.socketId].ready();
             sockets[msg.socketId].on('data', (buffer) => {
@@ -52,7 +60,6 @@ sock.on('message', async (message, isBinary) => {
             });
         } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
             sockets[msg.socketId].destroy();
-            delete sockets[msg.socketId];
         } else if (msg.handler == 'Connection' && msg.type == 'Data') {
             sockets[msg.socketId].write(decrypt(msg.data, aesKey));
         }
@@ -85,7 +92,6 @@ sock.on('message', async (message, isBinary) => {
                 incomingSockets[msg.socketId].write(decrypt(msg.data, aesKey));
             } else if (msg.type == 'Closed') {
                 incomingSockets[msg.socketId].destroy();
-                delete incomingSockets[msg.socketId];
             }
         }
         if (msg.message)
@@ -96,7 +102,6 @@ sock.on('message', async (message, isBinary) => {
 if (config.socks.enabled) {
     const server = socks5.createServer(async (socket, port, address, proxy_ready) => {
         const id = generateID();
-        sockets[id] = socket;
         socket.ready = () => {
             proxy_ready();
         };
@@ -107,6 +112,7 @@ if (config.socks.enabled) {
                 garbage: generateGarbage()
             }));
         });
+        sockets[id] = socket;
         sock.send(YAML.stringify({
             _: 'CreateConnection',
             host: address,
