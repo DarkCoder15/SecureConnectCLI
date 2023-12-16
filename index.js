@@ -27,12 +27,21 @@ var sock = new ws.WebSocket(url, {
 var sockets = {};
 var incomingSockets = {};
 
-sock.on('open', async () => {
+var queued = [];
+setInterval(() => {
     sock.send(YAML.stringify({
+        queue: 1,
+        queued
+    }));
+    queued = [];
+}, 50);
+
+sock.on('open', async () => {
+    queued.push(YAML.stringify({
         _: 'Authorization',
         username,
         password,
-        tunnels: {},
+        tunnels,
         garbage: generateGarbage(),
         timestamp: Date.now()
     }));
@@ -50,6 +59,15 @@ function relay(url, username, password, socket, address, port) {
     var packets = [];
     var sockets = {};
 
+    var queued = [];
+    var i2 = setInterval(() => {
+        sock.send(YAML.stringify({
+            queue: 1,
+            queued
+        }));
+        queued = [];
+    }, 50);
+
     var i = setInterval(() => {
         packets = packets.sort((a, b) => a.timestamp - b.timestamp);
         for (const data of packets) {
@@ -60,7 +78,7 @@ function relay(url, username, password, socket, address, port) {
                 if (msg.handler == 'Connection' && msg.type == 'Open') {
                     sockets[msg.socketId].ready();
                     sockets[msg.socketId].on('data', (buffer) => {
-                        sock.send(YAML.stringify({
+                        queued.push(YAML.stringify({
                             _: 'Write',
                             socketId: msg.socketId,
                             data: encrypt(buffer, aesKey).toString('binary'),
@@ -78,17 +96,18 @@ function relay(url, username, password, socket, address, port) {
                 if (msg.handler == 'Authorization' && msg.type == 'Success') {
                     const id = generateID();
                     socket.on('close', () => {
-                        sock.send(YAML.stringify({
+                        queued.push(YAML.stringify({
                             _: 'CloseConnection',
                             socketId: id,
                             garbage: generateGarbage(),
                             timestamp: Date.now()
                         }));
                         clearInterval(i);
+                        clearInterval(i2);
                         sock.close();
                     });
                     sockets[id] = socket;
-                    sock.send(YAML.stringify({
+                    queued.push(YAML.stringify({
                         _: 'CreateConnection',
                         host: address,
                         port,
@@ -110,7 +129,7 @@ function relay(url, username, password, socket, address, port) {
     });
 
     sock.on('open', async () => {
-        sock.send(YAML.stringify({
+        queued.push(YAML.stringify({
             _: 'Authorization',
             username,
             password,
@@ -118,85 +137,7 @@ function relay(url, username, password, socket, address, port) {
             garbage: generateGarbage(),
             timestamp: Date.now()
         }));
-       
-    });
-}
 
-function tunnel(url, username, password, tunnels) {
-    var sock = new ws.WebSocket(url, {
-        rejectUnauthorized: false
-    });
-    var packets = [];
-    var incomingSockets = {};
-
-    var i = setInterval(() => {
-        packets = packets.sort((a, b) => a.timestamp - b.timestamp);
-        for (const data of packets) {
-            packets.shift();
-            for (const msg of data.data) {
-                // if else if else if else if else if else if else if else if else if else if else
-                if (msg.socketId && !incomingSockets[msg.socketId]) continue;
-                if (msg.handler == 'IncomingConnection') {
-                    if (msg.type == 'Open') {
-                        const tun = tunnels[msg.port];
-                        const conn = net.createConnection({
-                            host: tun.host,
-                            port: tun.port
-                        }, () => {
-                            incomingSockets[msg.socketId] = conn;
-                            conn.on('data', (buffer) => {
-                                sock.send(YAML.stringify({
-                                    _: 'Write',
-                                    socketId: msg.socketId,
-                                    data: encrypt(buffer, aesKey).toString('binary'),
-                                    garbage: generateGarbage(),
-                                    timestamp: Date.now()
-                                }));
-                            });
-                        });
-                        conn.ready = () => { };
-                        conn.on('close', () => {
-                            sock.send(YAML.stringify({
-                                _: 'CloseConnection',
-                                socketId: msg.socketId,
-                                garbage: generateGarbage(),
-                                timestamp: Date.now()
-                            }));
-                        });
-                    } else if (msg.type == 'Data') {
-                        incomingSockets[msg.socketId].write(decrypt(msg.data, aesKey));
-                    } else if (msg.type == 'Closed') {
-                        incomingSockets[msg.socketId].destroy();
-                    }
-                }
-                if (msg.message)
-                    console.log(`[${new Date().toLocaleTimeString()}] [${msg.handler}] ${msg.type}: ${msg.message}`);
-            }
-        }
-    }, 1);
-
-    sock.on('message', async (message, isBinary) => {
-        message = message.toString('utf-8');
-        const data = YAML.parse(message);
-        packets.push(data);
-    });
-
-    sock.on('open', async () => {
-        sock.send(YAML.stringify({
-            _: 'Authorization',
-            username,
-            password,
-            tunnels,
-            garbage: generateGarbage(),
-            timestamp: Date.now()
-        }));
-       
-    });
-}
-
-for (const port in tunnels) {
-    tunnel(url, username, password, port, {
-        [port]: tunnels[port]
     });
 }
 
@@ -212,7 +153,7 @@ setInterval(() => {
             if (msg.handler == 'Connection' && msg.type == 'Open') {
                 sockets[msg.socketId].ready();
                 sockets[msg.socketId].on('data', (buffer) => {
-                    sock.send(YAML.stringify({
+                    queued.push(YAML.stringify({
                         _: 'Write',
                         socketId: msg.socketId,
                         data: encrypt(buffer, aesKey).toString('binary'),
@@ -234,7 +175,7 @@ setInterval(() => {
                     }, () => {
                         incomingSockets[msg.socketId] = conn;
                         conn.on('data', (buffer) => {
-                            sock.send(YAML.stringify({
+                            queued.push(YAML.stringify({
                                 _: 'Write',
                                 socketId: msg.socketId,
                                 data: encrypt(buffer, aesKey).toString('binary'),
@@ -245,7 +186,7 @@ setInterval(() => {
                     });
                     conn.ready = () => { };
                     conn.on('close', () => {
-                        sock.send(YAML.stringify({
+                        queued.push(YAML.stringify({
                             _: 'CloseConnection',
                             socketId: msg.socketId,
                             garbage: generateGarbage(),
@@ -281,7 +222,7 @@ if (config.socks.enabled) {
         //     proxy_ready();
         // };
         // socket.on('close', () => {
-        //     sock.send(YAML.stringify({
+        //     queued.push(YAML.stringify({
         //         _: 'CloseConnection',
         //         socketId: id,
         //         garbage: generateGarbage(),
@@ -289,7 +230,7 @@ if (config.socks.enabled) {
         //     }));
         // });
         // sockets[id] = socket;
-        // sock.send(YAML.stringify({
+        // queued.push(YAML.stringify({
         //     _: 'CreateConnection',
         //     host: address,
         //     port,
@@ -317,14 +258,14 @@ if (config.http.enabled) {
             socket.write(`HTTP/1.1 200 Connection Established\r\n\r\n`);
         };
         socket.on('close', () => {
-            sock.send(YAML.stringify({
+            queued.push(YAML.stringify({
                 _: 'CloseConnection',
                 socketId: id,
                 garbage: generateGarbage(),
                 timestamp: Date.now()
             }));
         });
-        sock.send(YAML.stringify({
+        queued.push(YAML.stringify({
             _: 'CreateConnection',
             host,
             port,
@@ -349,14 +290,14 @@ for (const gate of config.tcp) {
 
         });
         socket.on('close', () => {
-            sock.send(YAML.stringify({
+            queued.push(YAML.stringify({
                 _: 'CloseConnection',
                 socketId: id,
                 garbage: generateGarbage(),
                 timestamp: Date.now()
             }));
         });
-        sock.send(YAML.stringify({
+        queued.push(YAML.stringify({
             _: 'CreateConnection',
             host: gate.targetHost,
             port: gate.targetPort,
