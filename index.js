@@ -63,11 +63,13 @@ function relay(url, username, password, socket, address, port) {
 
     var queued = [];
     var i2 = setInterval(() => {
-        sock.send(YAML.stringify({
-            queue: 1,
-            queued
-        }));
-        queued = [];
+        if (queued.length > 0) {
+            sock.send(YAML.stringify({
+                queue: 1,
+                queued
+            }));
+            queued = [];
+        }
     }, 50);
 
     var i = setInterval(() => {
