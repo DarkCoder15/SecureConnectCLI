@@ -29,11 +29,13 @@ var incomingSockets = {};
 
 var queued = [];
 setInterval(() => {
-    sock.send(YAML.stringify({
-        queue: 1,
-        queued
-    }));
-    queued = [];
+    if (queued.length > 0) {
+        sock.send(YAML.stringify({
+            queue: 1,
+            queued
+        }));
+        queued = [];
+    }
 }, 50);
 
 sock.on('open', async () => {
