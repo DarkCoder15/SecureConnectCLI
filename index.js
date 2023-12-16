@@ -32,7 +32,7 @@ sock.on('open', async () => {
         _: 'Authorization',
         username,
         password,
-        tunnels,
+        tunnels: {},
         garbage: generateGarbage(),
         timestamp: Date.now()
     }));
@@ -119,6 +119,84 @@ function relay(url, username, password, socket, address, port) {
             timestamp: Date.now()
         }));
        
+    });
+}
+
+function tunnel(url, username, password, tunnels) {
+    var sock = new ws.WebSocket(url, {
+        rejectUnauthorized: false
+    });
+    var packets = [];
+    var incomingSockets = {};
+
+    var i = setInterval(() => {
+        packets = packets.sort((a, b) => a.timestamp - b.timestamp);
+        for (const data of packets) {
+            packets.shift();
+            for (const msg of data.data) {
+                // if else if else if else if else if else if else if else if else if else if else
+                if (msg.socketId && !incomingSockets[msg.socketId]) continue;
+                if (msg.handler == 'IncomingConnection') {
+                    if (msg.type == 'Open') {
+                        const tun = tunnels[msg.port];
+                        const conn = net.createConnection({
+                            host: tun.host,
+                            port: tun.port
+                        }, () => {
+                            incomingSockets[msg.socketId] = conn;
+                            conn.on('data', (buffer) => {
+                                sock.send(YAML.stringify({
+                                    _: 'Write',
+                                    socketId: msg.socketId,
+                                    data: encrypt(buffer, aesKey).toString('binary'),
+                                    garbage: generateGarbage(),
+                                    timestamp: Date.now()
+                                }));
+                            });
+                        });
+                        conn.ready = () => { };
+                        conn.on('close', () => {
+                            sock.send(YAML.stringify({
+                                _: 'CloseConnection',
+                                socketId: msg.socketId,
+                                garbage: generateGarbage(),
+                                timestamp: Date.now()
+                            }));
+                        });
+                    } else if (msg.type == 'Data') {
+                        incomingSockets[msg.socketId].write(decrypt(msg.data, aesKey));
+                    } else if (msg.type == 'Closed') {
+                        incomingSockets[msg.socketId].destroy();
+                    }
+                }
+                if (msg.message)
+                    console.log(`[${new Date().toLocaleTimeString()}] [${msg.handler}] ${msg.type}: ${msg.message}`);
+            }
+        }
+    }, 1);
+
+    sock.on('message', async (message, isBinary) => {
+        message = message.toString('utf-8');
+        const data = YAML.parse(message);
+        packets.push(data);
+    });
+
+    sock.on('open', async () => {
+        sock.send(YAML.stringify({
+            _: 'Authorization',
+            username,
+            password,
+            tunnels,
+            garbage: generateGarbage(),
+            timestamp: Date.now()
+        }));
+       
+    });
+}
+
+for (const port in tunnels) {
+    tunnel(url, username, port, {
+        [port]: tunnels[port]
     });
 }
 
