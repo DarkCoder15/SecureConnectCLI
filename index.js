@@ -90,6 +90,9 @@ function relay(url, username, password, socket, address, port) {
                             timestamp: Date.now()
                         }));
                     });
+                    sockets[msg.socketId].on('close', () => {
+
+                    });
                 } else if (msg.handler == 'Connection' && msg.type == 'Closed') {
                     sockets[msg.socketId].destroy();
                     clearInterval(i);
@@ -215,31 +218,31 @@ sock.on('message', async (message, isBinary) => {
 
 if (config.socks.enabled) {
     const server = socks5.createServer(async (socket, port, address, proxy_ready) => {
-        // socket.ready = () => {
-        //     proxy_ready();
-        // };
-        // relay(url, username, password, socket, address, port);
-        const id = generateID();
         socket.ready = () => {
             proxy_ready();
         };
-        socket.on('close', () => {
-            queued.push(YAML.stringify({
-                _: 'CloseConnection',
-                socketId: id,
-                garbage: generateGarbage(),
-                timestamp: Date.now()
-            }));
-        });
-        sockets[id] = socket;
-        queued.push(YAML.stringify({
-            _: 'CreateConnection',
-            host: address,
-            port,
-            socketId: id,
-            garbage: generateGarbage(),
-            timestamp: Date.now()
-        }));
+        relay(url, username, password, socket, address, port);
+        // const id = generateID();
+        // socket.ready = () => {
+        //     proxy_ready();
+        // };
+        // socket.on('close', () => {
+        //     queued.push(YAML.stringify({
+        //         _: 'CloseConnection',
+        //         socketId: id,
+        //         garbage: generateGarbage(),
+        //         timestamp: Date.now()
+        //     }));
+        // });
+        // sockets[id] = socket;
+        // queued.push(YAML.stringify({
+        //     _: 'CreateConnection',
+        //     host: address,
+        //     port,
+        //     socketId: id,
+        //     garbage: generateGarbage(),
+        //     timestamp: Date.now()
+        // }));
     });
 
     server.listen(config.socks.port, config.socks.host);
